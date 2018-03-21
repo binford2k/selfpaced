@@ -1,65 +1,35 @@
-class selfpaced (
-  $docroot = $selfpaced::params::docroot
-) inherits selfpaced::params {
-  class { 'docker':
-    extra_parameters => '--default-ulimit nofile=1000000:1000000',
-  }
-  docker::image {'centos:7':}
-  docker::image { 'agent':
-    docker_dir => '/tmp/agent',
-    subscribe => File['/tmp/agent'],
-    require => Docker::Image['centos:7'],
-  }
-  file { '/tmp/agent':
-    ensure => directory,
-    recurse => true,
-    source => 'puppet:///modules/selfpaced/agent',
+class selfpaced {
+  File {
+    ensure => file,
+    owner  => 'root',
+    group  => 'root',
+    mode   => '0644',
   }
 
+  include selfpaced::web
+  include selfpaced::docker
+  include selfpaced::selinux
 
-  file {'/usr/local/bin/selfpaced':
-    mode => '0755',
-    source => 'puppet:///modules/selfpaced/selfpaced.rb',
-  }
-  file {'/usr/local/share/words':
-    ensure => directory
-  }
-  file {'/usr/local/share/words/places.txt':
-    source => 'puppet:///modules/selfpaced/places.txt',
-  }
-  file {'/usr/local/bin/cleanup':
-    mode => '0755',
-    source => 'puppet:///modules/selfpaced/cleanup.rb',
+  package { [ 'git', 'rubygems', 'zlib-devel', 'ruby-devel', 'gcc', 'gcc-c++' ]:
+    ensure => present,
   }
 
-  include nginx
-  nginx::resource::vhost { 'try.puppet.com':
-    ssl_port               => '443',
-    ssl                    => true,
-    ssl_cert               => '/etc/ssl/try.puppet.com.crt',
-    ssl_key                => '/etc/ssl/try.puppet.com.key',
-    use_default_location   => false,
-    locations              => {
-      '/sandbox/' => {
-        proxy_read_timeout    => '1h',
-        proxy_connect_timeout => '1h',
-        proxy                 => 'http://127.0.0.1:3000',
-        proxy_set_header      => [
-          'Upgrade $http_upgrade',
-          'Connection "Upgrade"',
-        ],
-        rewrite_rules         => [
-          '/sandbox(.*) /$1  break'
-        ]
-      },
-      '/' => {
-        www_root => $docroot
-      }
-    }
+  package { 'puppet':
+    ensure          => present,
+    provider        => gem,
+    require         => Package['rubygems'],
+    install_options => { '--bindir' => '/tmp' },
   }
-  package { 'puppetclassify':
+
+  package { [ 'puppetclassify', 'dockershell' ]:
     ensure   => present,
     provider => 'gem',
+    require  => Package['rubygems'],
+  }
+  package { 'public_suffix':
+    ensure   => '2.0.5',
+    provider => gem,
+    require  => Package['rubygems'],
   }
 
   vcsrepo { '/etc/puppetlabs/code/modules/course_selector':
@@ -69,27 +39,39 @@ class selfpaced (
     force    => true,
   }
 
+  file { '/etc/puppetlabs/puppet/autosign.conf':
+    ensure => file,
+    source => 'puppet:///modules/selfpaced/autosign.conf',
+  }
+
+  file { '/etc/puppetlabs/code/environments/production/hieradata/common.yaml':
+    ensure => file,
+    source => 'puppet:///modules/selfpaced/common.yaml',
+  }
+
+  file { '/etc/banner':
+    ensure => file,
+    source => 'puppet:///modules/selfpaced/banner',
+  }
+
+  file { '/etc/dockershell':
+    ensure => directory,
+  }
+
+  file { '/etc/dockershell/config.yaml':
+    ensure => file,
+    source => 'puppet:///modules/selfpaced/dockershell/config.yaml',
+  }
+
   class { 'abalone':
-    port    => '3000',
-    command => 'selfpaced',
-    method  => 'command',
-    params  => ['course', 'uuid'],
-  }
-  include selfpaced::webpage
-
-  firewall { '000 accept outbound 80, 443, and 8140 traffic on docker0':
-    iniface     => 'docker0',
-    chain       => 'FORWARD',
-    proto       => 'tcp',
-    dport       => ['! 80','! 443','! 8140'],
-    action      => 'reject',
+    autoconnect => false,
+    bannerfile  => '/etc/banner',
+    command     => '/usr/local/bin/dockershell',
+    method      => 'command',
+    params      => ['profile', 'option'],
+    port        => '3000',
+    timeout     => 900,
+    ttl         => 900,
   }
 
-  cron { "Cleanup containers every 30 minutes":
-    ensure  => present,
-    command => 'cleanup',
-    user    => 'root',
-    hour    => '*',
-    minute  => '*/30',
-  }
 }
