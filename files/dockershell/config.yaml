@@ -1,0 +1,7 @@
+---
+:profiles:
+    :default:
+      :image: agent
+      :prerun: pe_classify
+      :setup: course_selector
+      :postrun: pe_purge
