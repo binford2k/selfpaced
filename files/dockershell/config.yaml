@@ -1,4 +1,5 @@
 ---
+:domain: try.puppet.com
 :profiles:
     :default:
       :image: agent
