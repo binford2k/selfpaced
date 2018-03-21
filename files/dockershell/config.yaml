@@ -5,3 +5,6 @@
       :prerun: pe_classify
       :setup: course_selector
       :postrun: pe_purge
+    :docs:
+      :image: agent
+      :postrun: purge_certs
